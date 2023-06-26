@@ -476,34 +476,6 @@ void add_to_queue(afl_state_t *afl, u8 *fname, u32 len, u8 passed_det) {
   q->testcase_buf = NULL;
   q->mother = afl->queue_cur;
 
-  /* Bandit */
-#ifdef BATCHSIZE_BANDIT
-  if (likely(afl->queue_cur))
-    for (int i = 0; i < NUM_BATCH_BUCKET; i++)
-      for (int j = 0; j < NUM_CASE; j++)
-        CP_INSTANCE(BATCH_ALG)(&q->batch_bandit[i][j], &afl->queue_cur->batch_bandit[i][j]);
-  else
-    for (int i = 0; i < NUM_BATCH_BUCKET; i++)
-      for (int j = 0; j < NUM_CASE; j++)
-        INIT_INSTANCE(BATCH_ALG)(afl, &q->batch_bandit[i][j], BATCH_NUM_ARM);
-#endif
-
-#if defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
-#ifdef MOPTWISE_BANDIT_FINECOARSE
-#define NARMS 2
-#else
-#define NARMS NUM_CASE
-#endif
-  if (likely(afl->queue_cur))
-    for (int i = 0; i < NUM_MUT_BUCKET; i++)
-      CP_INSTANCE(BATCH_ALG)(&q->mut_bandit[i], &afl->queue_cur->mut_bandit[i]);
-  else
-    for (int i = 0; i < NUM_MUT_BUCKET; i++)
-      INIT_INSTANCE(BATCH_ALG)(afl, &q->mut_bandit[i], NARMS);
-#undef NARMS
-#endif
-
-
 #ifdef INTROSPECTION
   q->bitsmap_size = afl->bitsmap_size;
 #endif
@@ -578,19 +550,6 @@ void destroy_queue(afl_state_t *afl) {
     ck_free(q->fname);
     ck_free(q->trace_mini);
     ck_free(q->fuzzed_branches);
-
-#ifdef BATCHSIZE_BANDIT
-    for (int i = 0; i < NUM_BATCH_BUCKET; i++)
-      for (int j = 0; j < NUM_CASE; j++)
-        DEST_INSTANCE(BATCH_ALG)(&q->batch_bandit[i][j]);
-#endif
-
-#if defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
-    for (int i = 0; i < NUM_MUT_BUCKET; i++)
-      DEST_INSTANCE(MUT_ALG)(&q->mut_bandit[i]);
-#endif
-
-
     ck_free(q);
 
   }

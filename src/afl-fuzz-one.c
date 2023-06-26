@@ -246,16 +246,6 @@ void init_adwin(adwin_t *ret) {
   ret->head = calloc(1, sizeof(adwin_node_t));
   ret->tail = ret->head;
 }
-void cp_adwin(adwin_t *to, adwin_t *from) {
-  to->head = calloc(1, sizeof(adwin_node_t));
-  memcpy(to->head, from->head, sizeof(adwin_node_t));
-  to->tail = to->head;
-  for (adwin_node_t * node = from->head->next; node; node = node->next) {
-    to->tail->next = calloc(1, sizeof(adwin_node_t));
-    to->tail = to->tail->next;
-    memcpy(to->tail, node, sizeof(adwin_node_t));
-  }
-}
 
 void dest_adwin(adwin_t* adwin) {
   adwin_node_t* node;
@@ -1131,10 +1121,10 @@ static int* get_lowest_hit_branch_ids(afl_state_t *afl){
   }
 
   if (ret_list_size == 0){
-    DEBUG1(afl, "Was returning list of size 0\n");
+    DEBUG1("Was returning list of size 0\n");
     if (lowest_hob != INT_MAX) {
       afl->rare_branch_exp = lowest_hob + 1;
-      DEBUG1(afl, "Upped max exp to %i\n", afl->rare_branch_exp);
+      DEBUG1("Upped max exp to %i\n", afl->rare_branch_exp);
       ck_free(rare_branch_ids);
       return get_lowest_hit_branch_ids(afl);
     }
@@ -1213,7 +1203,7 @@ static u32 * is_rb_hit_mini(afl_state_t *afl, u8* trace_bits_mini){
 
 static u32 trim_case_rb(afl_state_t * afl, u8* in_buf, u32 in_len, u8* out_buf) {
 
-  DEBUG1 (afl, "entering RB trim, len is %i\n", in_len);
+  DEBUG1 ("entering RB trim, len is %i\n", in_len);
 
   if (afl->rb_fuzzing == 0){
     // @RB@ this should not happen. 
@@ -3504,8 +3494,8 @@ havoc_stage:
   mut_bucket = 0;
 #endif
 
-  BANDIT_T(MUT_ALG)*    mut_bandit  = &afl->queue_cur->mut_bandit[mut_bucket];
-  BANDIT_T(BATCH_ALG)* used_bucket = afl->queue_cur->batch_bandit[batch_bucket];
+  BANDIT_T(MUT_ALG)*    mut_bandit  = &afl->mut_bandit[mut_bucket];
+  BANDIT_T(BATCH_ALG)* used_bucket = afl->batch_bandit[batch_bucket];
 
   for (afl->stage_cur = 0; afl->stage_cur < afl->stage_max; ++afl->stage_cur) {
 
