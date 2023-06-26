@@ -891,6 +891,15 @@ void perform_dry_run(afl_state_t *afl) {
 
     res = calibrate_case(afl, q, use_mem, 0, 1);
 
+    // @RB@ added these for every queue entry
+    // free what was added in add_to_queue
+    ck_free(q->trace_mini);
+    ck_free(q->fuzzed_branches);
+    q->trace_mini = ck_alloc(afl->fsrv.map_size >> 3);
+    minimize_bits(afl, q->trace_mini, afl->fsrv.trace_bits);
+    q->fuzzed_branches = ck_alloc(afl->fsrv.map_size >>3);
+    // @End
+
     if (afl->stop_soon) { return; }
 
     if (res == afl->crash_mode || res == FSRV_RUN_NOBITS) {
@@ -2832,7 +2841,9 @@ void check_binary(afl_state_t *afl, u8 *fname) {
 
     OKF(cPIN "Deferred forkserver binary detected.");
     setenv(DEFER_ENV_VAR, "1", 1);
-    afl->deferred_mode = 1;
+
+    //TODO: Don't do this for fairfuzz?
+    //afl->deferred_mode = 1;
 
   } else if (getenv("AFL_DEFER_FORKSRV")) {
 

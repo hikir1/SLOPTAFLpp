@@ -27,6 +27,39 @@
 #include <ctype.h>
 #include <math.h>
 
+// @LFB@ functions for logging
+void tee2(afl_state_t const *afl, char const *fmt, ...) { 
+    static FILE *f = NULL;
+    if (f == NULL) {
+      u8 * fn = alloc_printf("%s/min-branch-fuzzing.log", afl->out_dir);
+      f= fopen(fn, "w");
+      ck_free(fn);
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+}
+
+void fileonly (afl_state_t const *afl, char const *fmt, ...) { 
+    static FILE *f = NULL;
+    if (f == NULL) {
+      u8 * fn = alloc_printf("%s/min-branch-fuzzing.log", afl->out_dir);
+      f= fopen(fn, "w");
+      ck_free(fn);
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+}
+
+
+/////////////////////////////
+
 /* select next queue entry based on alias algo - fast! */
 
 inline u32 select_next_queue_entry(afl_state_t *afl) {
@@ -432,13 +465,44 @@ void add_to_queue(afl_state_t *afl, u8 *fname, u32 len, u8 passed_det) {
 
   struct queue_entry *q = ck_alloc(sizeof(struct queue_entry));
 
+  q->trace_mini = ck_alloc(afl->fsrv.map_size >> 3);
+  minimize_bits(afl, q->trace_mini, afl->fsrv.trace_bits);
+  q->fuzzed_branches = ck_alloc(afl->fsrv.map_size >> 3);
+
   q->fname = fname;
   q->len = len;
   q->depth = afl->cur_depth + 1;
   q->passed_det = passed_det;
-  q->trace_mini = NULL;
   q->testcase_buf = NULL;
   q->mother = afl->queue_cur;
+
+  /* Bandit */
+#ifdef BATCHSIZE_BANDIT
+  if (likely(afl->queue_cur))
+    for (int i = 0; i < NUM_BATCH_BUCKET; i++)
+      for (int j = 0; j < NUM_CASE; j++)
+        CP_INSTANCE(BATCH_ALG)(&q->batch_bandit[i][j], &afl->queue_cur->batch_bandit[i][j]);
+  else
+    for (int i = 0; i < NUM_BATCH_BUCKET; i++)
+      for (int j = 0; j < NUM_CASE; j++)
+        INIT_INSTANCE(BATCH_ALG)(afl, &q->batch_bandit[i][j], BATCH_NUM_ARM);
+#endif
+
+#if defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
+#ifdef MOPTWISE_BANDIT_FINECOARSE
+#define NARMS 2
+#else
+#define NARMS NUM_CASE
+#endif
+  if (likely(afl->queue_cur))
+    for (int i = 0; i < NUM_MUT_BUCKET; i++)
+      CP_INSTANCE(BATCH_ALG)(&q->mut_bandit[i], &afl->queue_cur->mut_bandit[i]);
+  else
+    for (int i = 0; i < NUM_MUT_BUCKET; i++)
+      INIT_INSTANCE(BATCH_ALG)(afl, &q->mut_bandit[i], NARMS);
+#undef NARMS
+#endif
+
 
 #ifdef INTROSPECTION
   q->bitsmap_size = afl->bitsmap_size;
@@ -513,6 +577,20 @@ void destroy_queue(afl_state_t *afl) {
     q = afl->queue_buf[i];
     ck_free(q->fname);
     ck_free(q->trace_mini);
+    ck_free(q->fuzzed_branches);
+
+#ifdef BATCHSIZE_BANDIT
+    for (int i = 0; i < NUM_BATCH_BUCKET; i++)
+      for (int j = 0; j < NUM_CASE; j++)
+        DEST_INSTANCE(BATCH_ALG)(&q->batch_bandit[i][j]);
+#endif
+
+#if defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
+    for (int i = 0; i < NUM_MUT_BUCKET; i++)
+      DEST_INSTANCE(MUT_ALG)(&q->mut_bandit[i]);
+#endif
+
+
     ck_free(q);
 
   }
@@ -611,8 +689,9 @@ void update_bitmap_score(afl_state_t *afl, struct queue_entry *q) {
 
         if (!--afl->top_rated[i]->tc_ref) {
 
-          ck_free(afl->top_rated[i]->trace_mini);
-          afl->top_rated[i]->trace_mini = 0;
+          //@RB@ TODO: find a better way to do this
+          // ck_free(top_rated[i]->trace_mini);
+          // top_rated[i]->trace_mini = 0;
 
         }
 

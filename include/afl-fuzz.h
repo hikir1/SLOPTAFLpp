@@ -80,6 +80,8 @@
 #include <sys/file.h>
 #include <sys/types.h>
 
+#define DEBUG1 fileonly
+
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
     defined(__NetBSD__) || defined(__DragonFly__)
   #include <sys/sysctl.h>
@@ -139,6 +141,249 @@
   #define AFL_RAND_RETURN u32
 #endif
 
+#define DISABLE_BANDIT_STAT
+
+enum HavocCase {
+  FLIP_BIT1 = 0,
+  INTERESTING8 = 1,
+  INTERESTING16 = 2,
+  INTERESTING16BE = 3,
+  INTERESTING32 = 4,
+  INTERESTING32BE = 5,
+  ARITH8_MINUS = 6,
+  ARITH8_PLUS = 7,
+  ARITH16_MINUS = 8,
+  ARITH16_BE_MINUS = 9,
+  ARITH16_PLUS = 10,
+  ARITH16_BE_PLUS = 11,
+  ARITH32_MINUS = 12,
+  ARITH32_BE_MINUS = 13,
+  ARITH32_PLUS = 14,
+  ARITH32_BE_PLUS = 15,
+  RAND8 = 16,
+  CLONE_BYTES = 17,
+  INSERT_SAME_BYTE = 18,
+  OVERWRITE_WITH_CHUNK = 19,
+  OVERWRITE_WITH_SAME_BYTE = 20,
+  DELETE_BYTES = 21,
+  OVERWRITE_WITH_EXTRA = 22,
+  INSERT_EXTRA = 23,
+  OVERWRITE_WITH_AEXTRA = 24,
+  INSERT_AEXTRA = 25,
+  SPLICE_OVERWRITE = 26,
+  SPLICE_INSERT = 27,
+  NUM_CASE_ENUM // this represents the number of members
+};
+
+/* NONSTATIONARY_BANDIT */
+  #undef ADWIN_ADAPTIVE_RESETTING
+  #undef ADWIN_ADAPTIVE_RESETTING_ALL
+
+  #define ADWIN_M 10
+  #define ADWIN_DELTA 1e-7
+  #define ADWIN_MIN_ELEM_TO_START_DROP 17
+  #define ADWIN_MIN_ELEM_TO_CHECK 5
+  #define ADWIN_DROP_INTERVAL 100
+/* NONSTATIONARY_BANDIT */
+
+/* KLUCB */
+  #define KLUCB_DELTA 1e-8
+  #define KLUCB_EPS 1e-12
+/* KLUCB */
+
+/* DISCOUNTED_THOMPSON_SAMPLING */
+  #undef OPTIMISTIC_DTS
+  #define DTS_GAMMA 0.9999999
+/* DISCOUNTED_THOMPSON_SAMPLING*/
+
+/* DISCOUNTED_BOLTZMANN_EXPLORATION */
+  // Follow SIVO's parameters
+  #define DBE_GAMMA 0.99
+/* DISCOUNTED_BOLTZMANN_EXPLORATION */
+
+/* EXPPP */
+  #define EXP_MAX_N_ARMS 100
+  #define EXP_N_ARMS 10
+  #define EXP_LOWER 0.0
+  #define EXP_AMPLITUDE 1.0
+  #define EXP_ALPHA 3.0
+  #define EXP_BETA 256.0
+/* EXPPP */
+
+typedef struct adwin_node {
+  struct adwin_node* next;
+  struct adwin_node* prev;
+
+  int size;
+  u64 sum[ADWIN_M+1];
+} adwin_node_t;
+
+typedef struct adwin {
+  adwin_node_t* head;
+  adwin_node_t* tail;
+
+  int num_add;
+  int last_node_idx;
+  u64 W;
+  u64 sum;
+} adwin_t;
+
+typedef struct {
+  u64 num_selected;
+  u64 total_rewards;
+} uniform_bandit_arm;
+
+typedef struct {
+  u64 num_selected;
+  u64 total_rewards;
+  double sample_mean;
+} normal_bandit_arm;
+
+typedef struct {
+  adwin_t adwin;
+  u64 num_selected;
+  u64 total_rewards;
+} adwin_bandit_arm;
+
+typedef struct {
+  u64 num_selected;
+  u64 num_rewarded;
+  double total_rewards;
+  double total_losses;
+} dts_bandit_arm;
+
+typedef struct {
+  u64 num_selected;
+  u64 num_rewarded;
+  double total_rewards;
+  double dis_num_selected;
+  double sample_mean;
+} dbe_bandit_arm;
+
+typedef struct {
+  int n_arms;
+  uniform_bandit_arm* arms;
+} uniform_t;
+
+typedef struct {
+  int n_arms;
+  u64 time_step;
+  normal_bandit_arm* arms;
+} ucb_t;
+
+typedef struct {
+  int n_arms;
+  u64 time_step;
+  normal_bandit_arm* arms;
+} klucb_t;
+
+typedef struct {
+  int n_arms;
+  normal_bandit_arm* arms;
+} ts_t;
+
+typedef struct {
+  int n_arms;
+  adwin_bandit_arm* arms;
+} adsts_t;
+
+typedef struct {
+  int n_arms;
+  dts_bandit_arm* arms;
+} dts_t;
+
+typedef struct {
+  int n_arms;
+  dbe_bandit_arm* arms;
+} dbe_t;
+
+typedef struct {
+  double *weights;
+  double *losses;
+  double *unweighted_losses;
+  u64 *total_rewards;
+  u64 *pulls;
+  u64 t;  // internal time count
+  // before you access this entry,
+  // you MUST update them by `exppp_update_trusts`
+  double *trusts;
+  u64 n_arms;
+} exppp_t;
+
+typedef struct {
+  double *weights;
+  double *losses;
+  u64 *total_rewards;
+  u64 *pulls;
+  u64 t;  // internal time count
+  u64 n_arms;
+} expix_t;
+
+// Choose whether or not to use MOpt-wise bandit
+#define MOPTWISE_BANDIT
+#undef MOPTWISE_BANDIT_FINECOARSE
+#define BATCHSIZE_BANDIT
+
+// Choose whether or not to prepare buckets-of-length also for moptwise bandit
+#undef USE_LEN_BUCKET_FOR_MOPTWISE
+
+/* Choose bandit algorithm for mutation operators */
+//#define MUT_ALG uniform
+//#define MUT_ALG ucb
+//#define MUT_ALG klucb
+#define MUT_ALG ts
+//#define MUT_ALG dts
+//#define MUT_ALG dbe
+//#define MUT_ALG adsts
+//#define MUT_ALG exppp
+//#define MUT_ALG expix
+
+/* Choose bandit algorithm for batch size */
+//#define BATCH_ALG uniform
+//#define BATCH_ALG ucb
+//#define BATCH_ALG klucb
+#define BATCH_ALG ts
+//#define BATCH_ALG dts
+//#define BATCH_ALG dbe
+//#define BATCH_ALG adsts
+//#define BATCH_ALG exppp
+//#define BATCH_ALG expix
+
+// define variables
+#define ____CONCAT(a, b) a ## b
+#define CONCAT(a, b) ____CONCAT(a, b)
+#define BANDIT_T(alg) CONCAT(alg, _t)
+#define INIT_INSTANCE(alg) CONCAT(alg, _init)
+#define CP_INSTANCE(alg) CONCAT(alg, _cp)
+#define DEST_INSTANCE(alg) CONCAT(alg, _dest)
+#define SELECT_ARM(alg) CONCAT(alg, _select_arm)
+#define ADD_REWARD(alg) CONCAT(alg, _add_reward)
+#define PRINT_STATE(alg) CONCAT(alg, _print_state)
+#define PRINT_ARM(alg) CONCAT(alg, _print_arm)
+
+// Choose whether or not to prepare arms for each cases
+#define ATOMIZE_CASES
+#undef DIVIDE_COARSE_FINE
+
+#ifdef ATOMIZE_CASES
+  #define NUM_CASE NUM_CASE_ENUM
+#elif defined(DIVIDE_COARSE_FINE)
+  #define NUM_CASE 2 // fine-grained, coarse-grained
+#else
+  #define NUM_CASE 1
+#endif
+
+#define MIN_LEN_FOR_OPTIMIZED_RESTORE 918000
+#define BATCH_NUM_ARM 7
+
+#define NUM_BATCH_BUCKET 5
+
+#ifdef USE_LEN_BUCKET_FOR_MOPTWISE
+#define NUM_MUT_BUCKET NUM_BATCH_BUCKET
+#else
+#define NUM_MUT_BUCKET 1
+#endif
+
 extern s8  interesting_8[INTERESTING_8_LEN];
 extern s16 interesting_16[INTERESTING_8_LEN + INTERESTING_16_LEN];
 extern s32
@@ -154,6 +399,10 @@ struct tainted {
 };
 
 struct queue_entry {
+
+  /* Bandit: For fairfuzz compat, have a separate distr. per entry */
+  BANDIT_T(MUT_ALG)   mut_bandit[NUM_MUT_BUCKET];
+  BANDIT_T(BATCH_ALG) batch_bandit[NUM_BATCH_BUCKET][NUM_CASE];
 
   u8 *fname;                            /* File name for the test case      */
   u32 len;                              /* Input length                     */
@@ -182,6 +431,8 @@ struct queue_entry {
 
   u8 *trace_mini;                       /* Trace bytes, if kept             */
   u32 tc_ref;                           /* Trace bytes ref count            */
+
+  u8 *fuzzed_branches;
 
 #ifdef INTROSPECTION
   u32 bitsmap_size;
@@ -413,254 +664,29 @@ struct foreign_sync {
 
 };
 
-#define DISABLE_BANDIT_STAT
-
-enum HavocCase {
-  FLIP_BIT1 = 0,
-  INTERESTING8 = 1,
-  INTERESTING16 = 2,
-  INTERESTING16BE = 3,
-  INTERESTING32 = 4,
-  INTERESTING32BE = 5,
-  ARITH8_MINUS = 6,
-  ARITH8_PLUS = 7,
-  ARITH16_MINUS = 8,
-  ARITH16_BE_MINUS = 9,
-  ARITH16_PLUS = 10,
-  ARITH16_BE_PLUS = 11,
-  ARITH32_MINUS = 12,
-  ARITH32_BE_MINUS = 13,
-  ARITH32_PLUS = 14,
-  ARITH32_BE_PLUS = 15,
-  RAND8 = 16,
-  CLONE_BYTES = 17,
-  INSERT_SAME_BYTE = 18,
-  OVERWRITE_WITH_CHUNK = 19,
-  OVERWRITE_WITH_SAME_BYTE = 20,
-  DELETE_BYTES = 21,
-  OVERWRITE_WITH_EXTRA = 22,
-  INSERT_EXTRA = 23,
-  OVERWRITE_WITH_AEXTRA = 24,
-  INSERT_AEXTRA = 25,
-  SPLICE_OVERWRITE = 26,
-  SPLICE_INSERT = 27,
-  NUM_CASE_ENUM // this represents the number of members
-};
-
-/* NONSTATIONARY_BANDIT */
-  #undef ADWIN_ADAPTIVE_RESETTING
-  #undef ADWIN_ADAPTIVE_RESETTING_ALL
-
-  #define ADWIN_M 10
-  #define ADWIN_DELTA 1e-7
-  #define ADWIN_MIN_ELEM_TO_START_DROP 17
-  #define ADWIN_MIN_ELEM_TO_CHECK 5
-  #define ADWIN_DROP_INTERVAL 100
-/* NONSTATIONARY_BANDIT */
-
-/* KLUCB */
-  #define KLUCB_DELTA 1e-8
-  #define KLUCB_EPS 1e-12
-/* KLUCB */
-
-/* DISCOUNTED_THOMPSON_SAMPLING */
-  #undef OPTIMISTIC_DTS
-  #define DTS_GAMMA 0.9999999
-/* DISCOUNTED_THOMPSON_SAMPLING*/
-
-/* DISCOUNTED_BOLTZMANN_EXPLORATION */
-  // Follow SIVO's parameters
-  #define DBE_GAMMA 0.99
-/* DISCOUNTED_BOLTZMANN_EXPLORATION */
-
-/* EXPPP */
-  #define EXP_MAX_N_ARMS 100
-  #define EXP_N_ARMS 10
-  #define EXP_LOWER 0.0
-  #define EXP_AMPLITUDE 1.0
-  #define EXP_ALPHA 3.0
-  #define EXP_BETA 256.0
-/* EXPPP */
-
-typedef struct adwin_node {
-  struct adwin_node* next;
-  struct adwin_node* prev;
-
-  int size;
-  u64 sum[ADWIN_M+1];
-} adwin_node_t;
-
-typedef struct adwin {
-  adwin_node_t* head;
-  adwin_node_t* tail;
-
-  int num_add;
-  int last_node_idx;
-  u64 W;
-  u64 sum;
-} adwin_t;
-
-typedef struct {
-  u64 num_selected;
-  u64 total_rewards;
-} uniform_bandit_arm;
-
-typedef struct {
-  u64 num_selected;
-  u64 total_rewards;
-  double sample_mean;
-} normal_bandit_arm;
-
-typedef struct {
-  adwin_t adwin;
-  u64 num_selected;
-  u64 total_rewards;
-} adwin_bandit_arm;
-
-typedef struct {
-  u64 num_selected;
-  u64 num_rewarded;
-  double total_rewards;
-  double total_losses;
-} dts_bandit_arm;
-
-typedef struct {
-  u64 num_selected;
-  u64 num_rewarded;
-  double total_rewards;
-  double dis_num_selected;
-  double sample_mean;
-} dbe_bandit_arm;
-
-typedef struct {
-  int n_arms;
-  uniform_bandit_arm* arms;
-} uniform_t;
-
-typedef struct {
-  int n_arms;
-  u64 time_step;
-  normal_bandit_arm* arms;
-} ucb_t;
-
-typedef struct {
-  int n_arms;
-  u64 time_step;
-  normal_bandit_arm* arms;
-} klucb_t;
-
-typedef struct {
-  int n_arms;
-  normal_bandit_arm* arms;
-} ts_t;
-
-typedef struct {
-  int n_arms;
-  adwin_bandit_arm* arms;
-} adsts_t;
-
-typedef struct {
-  int n_arms;
-  dts_bandit_arm* arms;
-} dts_t;
-
-typedef struct {
-  int n_arms;
-  dbe_bandit_arm* arms;
-} dbe_t;
-
-typedef struct {
-  double *weights;
-  double *losses;
-  double *unweighted_losses;
-  u64 *total_rewards;
-  u64 *pulls;
-  u64 t;  // internal time count
-  // before you access this entry,
-  // you MUST update them by `exppp_update_trusts`
-  double *trusts;
-  u64 n_arms;
-} exppp_t;
-
-typedef struct {
-  double *weights;
-  double *losses;
-  u64 *total_rewards;
-  u64 *pulls;
-  u64 t;  // internal time count
-  u64 n_arms;
-} expix_t;
-
-// Choose whether or not to use MOpt-wise bandit
-#define MOPTWISE_BANDIT
-#undef MOPTWISE_BANDIT_FINECOARSE
-#define BATCHSIZE_BANDIT
-
-// Choose whether or not to prepare buckets-of-length also for moptwise bandit
-#undef USE_LEN_BUCKET_FOR_MOPTWISE
-
-/* Choose bandit algorithm for mutation operators */
-//#define MUT_ALG uniform
-//#define MUT_ALG ucb
-//#define MUT_ALG klucb
-#define MUT_ALG ts
-//#define MUT_ALG dts
-//#define MUT_ALG dbe
-//#define MUT_ALG adsts
-//#define MUT_ALG exppp
-//#define MUT_ALG expix
-
-/* Choose bandit algorithm for batch size */
-//#define BATCH_ALG uniform
-//#define BATCH_ALG ucb
-//#define BATCH_ALG klucb
-#define BATCH_ALG ts
-//#define BATCH_ALG dts
-//#define BATCH_ALG dbe
-//#define BATCH_ALG adsts
-//#define BATCH_ALG exppp
-//#define BATCH_ALG expix
-
-// define variables
-#define ____CONCAT(a, b) a ## b
-#define CONCAT(a, b) ____CONCAT(a, b)
-#define BANDIT_T(alg) CONCAT(alg, _t)
-#define INIT_INSTANCE(alg) CONCAT(alg, _init)
-#define SELECT_ARM(alg) CONCAT(alg, _select_arm)
-#define ADD_REWARD(alg) CONCAT(alg, _add_reward)
-#define PRINT_STATE(alg) CONCAT(alg, _print_state)
-#define PRINT_ARM(alg) CONCAT(alg, _print_arm)
-
-// Choose whether or not to prepare arms for each cases
-#define ATOMIZE_CASES
-#undef DIVIDE_COARSE_FINE
-
-#ifdef ATOMIZE_CASES
-  #define NUM_CASE NUM_CASE_ENUM
-#elif defined(DIVIDE_COARSE_FINE)
-  #define NUM_CASE 2 // fine-grained, coarse-grained
-#else
-  #define NUM_CASE 1
-#endif
-
-#define MIN_LEN_FOR_OPTIMIZED_RESTORE 918000
-#define BATCH_NUM_ARM 7
-
-#define NUM_BATCH_BUCKET 5
-
-#ifdef USE_LEN_BUCKET_FOR_MOPTWISE
-#define NUM_MUT_BUCKET NUM_BATCH_BUCKET
-#else
-#define NUM_MUT_BUCKET 1
-#endif
-
 typedef struct afl_state {
   // file size backet: 
   // <= 100, <= 1000, <= 10000, <= 100000, <= 10485760
   // havoc_stack_pow2 <= 6
 
-  BANDIT_T(MUT_ALG)   mut_bandit[NUM_MUT_BUCKET];
-  BANDIT_T(BATCH_ALG) batch_bandit[NUM_BATCH_BUCKET][NUM_CASE];
+  u32 vanilla_afl;
+  u32 max_rare_branches;
+  int rare_branch_exp;
+  int * blacklist;
+  int blacklist_size;
+  int blacklist_pos;
+  u32 rb_fuzzing;
+  u32 total_branch_tries;
+  u32 successful_branch_tries;
+  u8 shadow_mode;
+  u8 run_with_shadow;
+  u8 use_branch_mask;
+  int prev_cycle_wo_new;
+  int cycle_wo_new;
+  int bootstrap;
+  u8 skip_deterministic_bootstrap;
+  int trim_for_branch;
+
   gsl_rng* gsl_rng_state;
 
   /* Position of this state in the global states list */
@@ -772,6 +798,8 @@ typedef struct afl_state {
       cycle_schedules,                  /* cycle power schedules?           */
       old_seed_selection,               /* use vanilla afl seed selection   */
       reinit_table;                     /* reinit the queue weight table    */
+
+  u64 *hit_bits;
 
   u8 *virgin_bits,                      /* Regions yet untouched by fuzzing */
       *virgin_tmout,                    /* Bits we haven't seen in tmouts   */
@@ -1234,6 +1262,14 @@ struct custom_mutator {
 
 };
 
+void fileonly (afl_state_t const *afl, char const *fmt, ...);
+
+/* return 0 if current trace bits hits branch with id branch_id,
+  0 otherwise */
+static inline int hits_branch(afl_state_t const *afl, int branch_id){
+  return (afl->fsrv.trace_bits[branch_id] != 0);
+}
+
 void afl_state_init(afl_state_t *, uint32_t map_size);
 void afl_state_deinit(afl_state_t *);
 
@@ -1251,9 +1287,39 @@ void read_afl_environment(afl_state_t *, char **);
 
 /**** Prototypes ****/
 
+void expix_init(afl_state_t *afl, expix_t *v, u64 n_arms);
+void expix_cp(expix_t *to, expix_t *from);
+void expix_dest(expix_t *v);
+void exppp_init(afl_state_t *afl, exppp_t *v, u64 n_arms);
+void exppp_cp(exppp_t *to, exppp_t *from);
+void exppp_dest(exppp_t *v);
+void uniform_init(afl_state_t *afl, uniform_t *v, int n_arms);
+void uniform_cp(uniform_t *to, uniform_t *from);
+void uniform_dest(uniform_t *v);
+void ucb_init(afl_state_t *afl, ucb_t *v, int n_arms);
+void ucb_cp(ucb_t *to, ucb_t *from);
+void ucb_dest(ucb_t *v);
+void klucb_init(afl_state_t *afl, klucb_t *v, int n_arms);
+void klucb_cp(klucb_t *to, klucb_t *from);
+void klucb_dest(klucb_t *v);
+void ts_init(afl_state_t *afl, ts_t *v, int n_arms);
+void ts_cp(ts_t *to, ts_t *from);
+void ts_dest(ts_t *v);
+void adsts_init(afl_state_t *afl, adsts_t *v, int n_arms);
+void adsts_cp(adsts_t *to, adsts_t *from);
+void adsts_dest(adsts_t *v);
+void dts_init(afl_state_t *afl, dts_t *v, int n_arms);
+void dts_cp(dts_t *to, dts_t *from);
+void dts_dest(dts_t *v);
+void dbe_init(afl_state_t *afl, dbe_t *v, int n_arms);
+void dbe_cp(dbe_t *to, dbe_t *from);
+void dbe_dest(dbe_t *v);
+
+
 /* Adwin */
 
 void init_adwin(adwin_t *ret);
+void cp_adwin(adwin_t *to, adwin_t *from);
 void dest_adwin(adwin_t* adwin);
 double adwin_get_estimation(adwin_t* adwin);
 

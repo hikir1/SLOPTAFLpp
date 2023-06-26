@@ -97,10 +97,12 @@ static void usage(u8 *argv0, int more_help) {
       "\n%s [ options ] -- /path/to/fuzzed_app [ ... ]\n\n"
 
       "Required parameters:\n"
+
       "  -i dir        - input directory with test cases\n"
       "  -o dir        - output directory for fuzzer findings\n\n"
 
       "Execution control settings:\n"
+
       "  -p schedule   - power schedules compute a seed's performance score:\n"
       "                  fast(default), explore, exploit, seek, rare, mmopt, "
       "coe, lin\n"
@@ -120,6 +122,7 @@ static void usage(u8 *argv0, int more_help) {
       "mode)\n\n"
 
       "Mutator settings:\n"
+
       "  -D            - enable deterministic fuzzing (once per queue entry)\n"
       "  -L minutes    - use MOpt(imize) mode and set the time limit for "
       "entering the\n"
@@ -134,16 +137,26 @@ static void usage(u8 *argv0, int more_help) {
       "                  1=small files, 2=larger files (default), 3=all "
       "files,\n"
       "                  A=arithmetic solving, T=transformational solving.\n\n"
+
       "Fuzzing behavior settings:\n"
+
       "  -Z            - sequential queue selection instead of weighted "
       "random\n"
       "  -N            - do not unlink the fuzzing input file (for devices "
       "etc.)\n"
       "  -n            - fuzz without instrumentation (non-instrumented mode)\n"
+      "  -r            - (RB) add an additional trimming stage for rare branches\n"
+      "  -a            - (RB) disable the use of branch mask to guide execution\n"
       "  -x dict_file  - fuzzer dictionary (see README.md, specify up to 4 "
-      "times)\n\n"
+      "times)\n"
+      "  -q num        - (RB) bootstrap rare branches with:\n"
+      "                  num=1: regular AFL queueing until a new branch is discovered\n"
+      "                  num=2: regular AFL queueing, no determistic fuzzing,\n"
+      "                         until a new branch is discovered\n"
+      "                  num=3: regular AFL queueing for one cycle\n\n"
 
       "Test settings:\n"
+
       "  -s seed       - use a fixed seed for the RNG\n"
       "  -V seconds    - fuzz for a specified time then terminate\n"
       "  -E execs      - fuzz for an approx. no. of total executions then "
@@ -152,6 +165,7 @@ static void usage(u8 *argv0, int more_help) {
       "executions.\n\n"
 
       "Other stuff:\n"
+
       "  -M/-S id      - distributed mode (see docs/parallel_fuzzing.md)\n"
       "                  -M auto-sets -D, -Z (use -d to disable -D) and no "
       "trimming\n"
@@ -168,7 +182,8 @@ static void usage(u8 *argv0, int more_help) {
       "  -b cpu_id     - bind the fuzzing process to the specified CPU core "
       "(0-...)\n"
       "  -e ext        - file extension for the fuzz test input file (if "
-      "needed)\n\n",
+      "needed)\n"
+      "  -A            - (RB) run in shadow mode (compare with and without branch mask)\n\n",
       argv0, EXEC_TIMEOUT, MEM_LIMIT, FOREIGN_SYNCS_MAX);
 
   if (more_help > 1) {
@@ -377,6 +392,35 @@ static void fasan_check_afl_preload(char *afl_preload) {
 
 }
 
+// when resuming re-increment hit bits
+static void init_hit_bits(afl_state_t *afl) {
+  s32 branch_hit_fd = -1;
+
+  ACTF("Attempting to init hit bits...");
+  u8* fn = alloc_printf("%s/branch-hits.bin", afl->out_dir);
+
+  branch_hit_fd = open(fn, O_RDONLY);
+  if (branch_hit_fd < 0) PFATAL("Unable to open '%s'", fn);
+
+  ck_read(branch_hit_fd, afl->hit_bits, sizeof(u64) * afl->fsrv.map_size, fn);
+
+  close(branch_hit_fd);
+  OKF("Init'ed hit_bits.");
+}
+
+/* at the end of execution, dump the number of inputs hitting
+   each branch to log */
+static void dump_to_logs(afl_state_t const *afl) {
+  s32 branch_hit_fd = -1;
+  u8* fn = alloc_printf("%s/branch-hits.bin", afl->out_dir);
+  unlink(fn); /* Ignore errors */
+  branch_hit_fd = open(fn, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+  if (branch_hit_fd < 0) PFATAL("Unable to create '%s'", fn);
+  ck_write(branch_hit_fd, afl->hit_bits, sizeof(u64) * afl->fsrv.map_size, fn);
+  ck_free(fn);
+  close(branch_hit_fd);
+}
+
 /* Main entry point */
 
 int main(int argc, char **argv_orig, char **envp) {
@@ -433,9 +477,25 @@ int main(int argc, char **argv_orig, char **envp) {
 
   while ((opt = getopt(
               argc, argv,
-              "+b:B:c:CdDe:E:hi:I:f:F:l:L:m:M:nNOo:p:RQs:S:t:T:UV:Wx:Z")) > 0) {
+              "+aq:rAb:B:c:CdDe:E:hi:I:f:F:l:L:m:M:nNOo:p:RQs:S:t:T:UV:Wx:Z")) > 0) {
 
     switch (opt) {
+
+      case 'a':
+        afl->use_branch_mask = 0;
+        break;
+
+      case 'q':
+        afl->bootstrap = strtol(optarg, 0, 10);
+        break;
+
+      case 'r':
+        afl->trim_for_branch = 1;
+        break;
+
+      case 'A':
+        afl->run_with_shadow = 1;
+        break;
 
       case 'Z':
         afl->old_seed_selection = 1;
@@ -1527,6 +1587,12 @@ int main(int argc, char **argv_orig, char **envp) {
 
   init_count_class16();
 
+  memset(afl->hit_bits, 0, map_size);
+  if (afl->in_place_resume) {
+    afl->vanilla_afl = 0;
+    init_hit_bits(afl);
+  }
+
   if (afl->is_main_node && check_main_node_exists(afl) == 1) {
 
     WARNF("it is wasteful to run more than one main node!");
@@ -1706,6 +1772,7 @@ int main(int argc, char **argv_orig, char **envp) {
     afl->clean_trace_custom = ck_realloc(afl->clean_trace_custom, map_size);
     afl->first_trace = ck_realloc(afl->first_trace, map_size);
     afl->map_tmp_buf = ck_realloc(afl->map_tmp_buf, map_size);
+    afl->hit_bits = ck_realloc(afl->hit_bits, map_size);
 
   }
 
@@ -1745,6 +1812,7 @@ int main(int argc, char **argv_orig, char **envp) {
           ck_realloc(afl->clean_trace_custom, new_map_size);
       afl->first_trace = ck_realloc(afl->first_trace, new_map_size);
       afl->map_tmp_buf = ck_realloc(afl->map_tmp_buf, new_map_size);
+      afl->hit_bits = ck_realloc(afl->hit_bits, new_map_size);
 
       afl_fsrv_kill(&afl->fsrv);
       afl_shm_deinit(&afl->shm);
@@ -1805,6 +1873,7 @@ int main(int argc, char **argv_orig, char **envp) {
           ck_realloc(afl->clean_trace_custom, new_map_size);
       afl->first_trace = ck_realloc(afl->first_trace, new_map_size);
       afl->map_tmp_buf = ck_realloc(afl->map_tmp_buf, new_map_size);
+      afl->hit_bits = ck_realloc(afl->hit_bits, new_map_size);
 
       afl_fsrv_kill(&afl->fsrv);
       afl_fsrv_kill(&afl->cmplog_fsrv);
@@ -1957,9 +2026,9 @@ int main(int argc, char **argv_orig, char **envp) {
 
     cull_queue(afl);
 
-    if (unlikely((!afl->old_seed_selection &&
+    if ((!afl->old_seed_selection &&
                   runs_in_current_cycle > afl->queued_paths) ||
-                 (afl->old_seed_selection && !afl->queue_cur))) {
+                 (afl->old_seed_selection && !afl->queue_cur)) {
 
       if (unlikely((afl->last_sync_cycle < afl->queue_cycle ||
                     (!afl->queue_cycle && afl->afl_env.afl_import_first)) &&
@@ -1968,6 +2037,15 @@ int main(int argc, char **argv_orig, char **envp) {
         sync_fuzzers(afl);
 
       }
+
+      DEBUG1(afl, "Entering new queueing cycle\n");
+      if (afl->prev_cycle_wo_new && (afl->bootstrap == 3)){
+        // only bootstrap for 1 cycle
+        afl->prev_cycle_wo_new = 0;
+      } else {
+        afl->prev_cycle_wo_new = afl->cycle_wo_new;
+      }
+      afl->cycle_wo_new = 1;
 
       ++afl->queue_cycle;
       runs_in_current_cycle = (u32)-1;
@@ -2281,7 +2359,9 @@ stop_fuzzing:
 
   if (frida_afl_preload) { ck_free(frida_afl_preload); }
 
+  dump_to_logs(afl);
   fclose(afl->fsrv.plot_file);
+  ck_free(afl->blacklist);
   destroy_queue(afl);
   destroy_extras(afl);
   destroy_custom_mutators(afl);

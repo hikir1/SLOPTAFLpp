@@ -450,6 +450,15 @@ void write_crash_readme(afl_state_t *afl) {
 
 }
 
+/* increment hit bits by 1 for every element of trace_bits that has been hit.
+ effectively counts that one input has hit each element of trace_bits */
+static void increment_hit_bits(afl_state_t * afl){
+  for (u32 i = 0; i < afl->fsrv.map_size; i++){
+    if ((afl->fsrv.trace_bits[i] > 0) && (afl->hit_bits[i] < ULONG_MAX))
+      afl->hit_bits[i]++;
+  }
+}
+
 /* Check if the result of an execve() during routine fuzzing is interesting,
    save or queue the input test case for further analysis if so. Returns 1 if
    entry is saved, 0 otherwise. */
@@ -483,6 +492,9 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
 
   if (likely(fault == afl->crash_mode)) {
 
+    /* @RB@ in shadow mode, don't increment hit bits*/
+    if (!afl->shadow_mode) increment_hit_bits(afl);	
+
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. */
 
@@ -509,76 +521,82 @@ save_if_interesting(afl_state_t *afl, void *mem, u32 len, u8 fault) {
         alloc_printf("%s/queue/id_%06u", afl->out_dir, afl->queued_paths);
 
 #endif                                                    /* ^!SIMPLE_FILES */
-    fd = open(queue_fn, O_WRONLY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
-    if (unlikely(fd < 0)) { PFATAL("Unable to create '%s'", queue_fn); }
-    ck_write(fd, mem, len, queue_fn);
-    close(fd);
-    add_to_queue(afl, queue_fn, len, 0);
+    /* @RB@ in shadow mode, don't actuallly add to queue */
+    if (!afl->shadow_mode) { 
+			fd = open(queue_fn, O_WRONLY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+			if (unlikely(fd < 0)) { PFATAL("Unable to create '%s'", queue_fn); }
+			ck_write(fd, mem, len, queue_fn);
+			close(fd);
+			add_to_queue(afl, queue_fn, len, 0);
+			// TODO
 
 #ifdef INTROSPECTION
-    if (afl->custom_mutators_count && afl->current_custom_fuzz) {
+			if (afl->custom_mutators_count && afl->current_custom_fuzz) {
 
-      LIST_FOREACH(&afl->custom_mutator_list, struct custom_mutator, {
+				LIST_FOREACH(&afl->custom_mutator_list, struct custom_mutator, {
 
-        if (afl->current_custom_fuzz == el && el->afl_custom_introspection) {
+					if (afl->current_custom_fuzz == el && el->afl_custom_introspection) {
 
-          const char *ptr = el->afl_custom_introspection(el->data);
+						const char *ptr = el->afl_custom_introspection(el->data);
 
-          if (ptr != NULL && *ptr != 0) {
+						if (ptr != NULL && *ptr != 0) {
 
-            fprintf(afl->introspection_file, "QUEUE CUSTOM %s = %s\n", ptr,
-                    afl->queue_top->fname);
+							fprintf(afl->introspection_file, "QUEUE CUSTOM %s = %s\n", ptr,
+											afl->queue_top->fname);
 
-          }
+						}
 
-        }
+					}
 
-      });
+				});
 
-    } else if (afl->mutation[0] != 0) {
+			} else if (afl->mutation[0] != 0) {
 
-      fprintf(afl->introspection_file, "QUEUE %s = %s\n", afl->mutation,
-              afl->queue_top->fname);
+				fprintf(afl->introspection_file, "QUEUE %s = %s\n", afl->mutation,
+								afl->queue_top->fname);
 
-    }
+			}
 
 #endif
 
-    if (new_bits == 2) {
+			if (new_bits == 2) {
 
-      afl->queue_top->has_new_cov = 1;
-      ++afl->queued_with_cov;
+				afl->queue_top->has_new_cov = 1;
+				++afl->queued_with_cov;
 
-    }
+			}
 
-    /* AFLFast schedule? update the new queue entry */
-    if (cksum) {
+#if 0
+			/* AFLFast schedule? update the new queue entry */
+			if (cksum) {
 
-      afl->queue_top->n_fuzz_entry = cksum % N_FUZZ_SIZE;
-      afl->n_fuzz[afl->queue_top->n_fuzz_entry] = 1;
+				afl->queue_top->n_fuzz_entry = cksum % N_FUZZ_SIZE;
+				afl->n_fuzz[afl->queue_top->n_fuzz_entry] = 1;
 
-    }
+			}
+#endif
 
-    /* due to classify counts we have to recalculate the checksum */
-    cksum = afl->queue_top->exec_cksum =
-        hash64(afl->fsrv.trace_bits, afl->fsrv.map_size, HASH_CONST);
+			/* due to classify counts we have to recalculate the checksum */
+			cksum = afl->queue_top->exec_cksum =
+					hash64(afl->fsrv.trace_bits, afl->fsrv.map_size, HASH_CONST);
 
-    /* Try to calibrate inline; this also calls update_bitmap_score() when
-       successful. */
+			/* Try to calibrate inline; this also calls update_bitmap_score() when
+				 successful. */
 
-    res = calibrate_case(afl, afl->queue_top, mem, afl->queue_cycle - 1, 0);
+			res = calibrate_case(afl, afl->queue_top, mem, afl->queue_cycle - 1, 0);
 
-    if (unlikely(res == FSRV_RUN_ERROR)) {
+			if (unlikely(res == FSRV_RUN_ERROR)) {
 
-      FATAL("Unable to execute target application");
+				FATAL("Unable to execute target application");
 
-    }
+			}
 
-    if (likely(afl->q_testcase_max_cache_size)) {
+			if (likely(afl->q_testcase_max_cache_size)) {
 
-      queue_testcase_store_mem(afl, afl->queue_top, mem);
+				queue_testcase_store_mem(afl, afl->queue_top, mem);
 
-    }
+			}
+		}
 
     keeping = 1;
 

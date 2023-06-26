@@ -467,87 +467,14 @@ void write_stats_file(afl_state_t *afl, u32 t_bytes, double bitmap_cvg,
     "none",
 #endif
   );
-  int i;
-  char buf[100];
 
-#if defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
-  for (i=0; i<NUM_MUT_BUCKET; i++) {
-    PRINT_STATE(MUT_ALG) (&afl->mut_bandit[i], f, 4);
-  }
-#if 0
-  for (i=0; i<NUM_MUT_BUCKET; i++) {
-    fprintf(f, " - bucket %02d\n", i);
-
-#ifdef MOPTWISE_BANDIT
-    const int jlim = NUM_CASE_ENUM;
-#else
-    const int jlim = 2;
 #endif
 
-  for (i=0; i<lim; i++) {
-    fprintf(f, " - mutate %02d\n", i);
-    int j;
-    for (j=0; j<jlim; j++) {
-      fprintf(f, "  - mutate %02d\n", j);
-#ifdef NONSTATIONARY_BANDIT
-      fprintf(f, "     %.6f%%(%llu / %llu)\n", adwin_get_estimation(&afl->mut_arms[i][j].adwin), afl->mut_arms[i][j].adwin.sum, afl->mut_arms[i][j].adwin.W);
-#elif defined(DISCOUNTED_THOMPSON_SAMPLING)
-      double tot = afl->mut_arms[i][j].total_rewards + afl->mut_arms[i][j].total_losses;
-      fprintf(f, "     %.6f%%(%f / %f, %llu)\n", afl->mut_arms[i][j].total_rewards / tot, afl->mut_arms[i][j].total_rewards, tot, afl->mut_arms[i][j].num_selected);
-#else
-      fprintf(f, "     %.6f%%(%llu / %llu)\n", afl->mut_arms[i][j].sample_mean, afl->mut_arms[i][j].total_rewards, afl->mut_arms[i][j].num_selected);
-#endif
-    }
-  }
-// END EXPPP || EXPIX
-#endif 
-// END defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
-#endif
+  /* Print Bandit stats? (PRINT_STATE/PRINT_ARM)
+   * Hard to do with 1 per seed
+   *
+   * */
 
-  for (i=0; i<NUM_BATCH_BUCKET; i++) {
-    fprintf(f, " - bucket %02d\n", i);
-    
-    int j;
-    for (j=0; j<NUM_CASE; j++) {
-
-      fprintf(f, "    mutate %02d:\n", j);
-      PRINT_STATE(BATCH_ALG)(&afl->batch_bandit[i][j], f, 6);
-
-      #if 0
-      int k;
-      u8 all_zero = 1;
-      for (k=0; k<=afl->havoc_stack_pow2; k++) {
-#ifdef NONSTATIONARY_BANDIT
-        if (afl->arms[i][j][k].adwin.W > 0) {
-#else
-        if (afl->arms[i][j][k].num_selected > 0) {
-#endif
-          all_zero = 0;
-          break;
-        }
-      }
-
-      if (all_zero) continue;
-
-      fprintf(f, "    mutate %02d:", j);
-
-      for (k=0; k<=afl->havoc_stack_pow2; k++) {
-#ifdef NONSTATIONARY_BANDIT
-        sprintf(buf, "%.6f%%(%llu / %llu)", adwin_get_estimation(&afl->arms[i][j][k].adwin), afl->arms[i][j][k].adwin.sum, afl->arms[i][j][k].adwin.W);
-#elif defined(DISCOUNTED_THOMPSON_SAMPLING)
-        double tot = afl->arms[i][j][k].total_rewards + afl->arms[i][j][k].total_losses;
-        sprintf(buf, "%.6f%%(%f / %f, %llu)", afl->arms[i][j][k].total_rewards / tot, afl->arms[i][j][k].total_rewards, tot, afl->arms[i][j][k].num_selected);
-#else
-        sprintf(buf, "%.6f%%(%llu / %llu)", afl->arms[i][j][k].sample_mean, afl->arms[i][j][k].total_rewards, afl->arms[i][j][k].num_selected);
-#endif
-        fprintf(f, "%25s", buf);
-      }
-      fprintf(f, "\n");
-      #endif
-    }
-  }
-
-#endif /* DISABLE_BANDIT_STAT */
 
   /* ignore errors */
 
@@ -629,21 +556,9 @@ void maybe_update_plot_file(afl_state_t *afl, u32 t_bytes, double bitmap_cvg,
           afl->unique_crashes, afl->unique_hangs, afl->max_depth, eps,
           afl->plot_prev_ed, t_bytes, afl->fsrv.total_havocs);  /* ignore errors */
  
-  int i;
-#if defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
-  for (i=0; i<NUM_MUT_BUCKET; i++) {
-    PRINT_ARM(MUT_ALG)(afl->fsrv.plot_file, &afl->mut_bandit[i]);
-  }
-#endif
-
-#ifdef BATCHSIZE_BANDIT
-  for (i=0; i<NUM_BATCH_BUCKET; i++) {
-    int j;
-    for (j=0; j<NUM_CASE; j++) {
-      PRINT_ARM(BATCH_ALG)(afl->fsrv.plot_file, &afl->batch_bandit[i][j]);
-    }
-  }
-#endif
+  /*
+   * Print Bandit arm???
+   */
 
   fprintf(afl->fsrv.plot_file, "\n");
   fflush(afl->fsrv.plot_file);

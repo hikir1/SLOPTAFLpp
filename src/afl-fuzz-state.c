@@ -50,6 +50,27 @@ void expix_init(afl_state_t *afl, expix_t *v, u64 n_arms) {
   }
 }
 
+void expix_cp(expix_t *to, expix_t *from) {
+  to->weights = calloc(sizeof(double), from->n_arms);
+  to->losses = calloc(sizeof(double), from->n_arms);
+  to->pulls = calloc(sizeof(u64), from->n_arms);
+  to->total_rewards = calloc(sizeof(u64), from->n_arms);
+  memcpy(to->weights, from->weights, sizeof(double) * from->n_arms);
+  memcpy(to->losses, from->losses, sizeof(double) * from->n_arms);
+  memcpy(to->pulls, from->pulls, sizeof(u64) * from->n_arms);
+  memcpy(to->total_rewards, from->total_rewards, sizeof(u64) * from->n_arms);
+
+  to->t = from->t;
+  to->n_arms = from->n_arms;
+}
+
+void expix_dest(expix_t * v) {
+  free(v->weights);
+  free(v->losses);
+  free(v->pulls);
+  free(v->total_rewards);
+}
+
 void exppp_init(afl_state_t *afl, exppp_t *v, u64 n_arms) {
   v->n_arms = n_arms;
 
@@ -70,9 +91,48 @@ void exppp_init(afl_state_t *afl, exppp_t *v, u64 n_arms) {
   v->t = n_arms;
 }
 
+void exppp_cp(exppp_t *to, exppp_t *from) {
+  to->n_arms = from->n_arms;
+
+  to->weights = calloc(sizeof(double), from->n_arms);
+  to->losses = calloc(sizeof(double), from->n_arms);
+  to->unweighted_losses = calloc(sizeof(double), from->n_arms);
+  to->pulls = calloc(sizeof(u64), from->n_arms);
+  to->total_rewards = calloc(sizeof(u64), from->n_arms);
+  to->trusts = calloc(sizeof(double), from->n_arms);
+
+  memcpy(to->weights, from->weights, sizeof(double) * from->n_arms);
+  memcpy(to->losses, from->losses, sizeof(double) * from->n_arms);
+  memcpy(to->unweighted_losses, from->unweighted_losses, sizeof(double) * from->n_arms);
+  memcpy(to->pulls, from->pulls, sizeof(u64) * from->n_arms);
+  memcpy(to->total_rewards, from->total_rewards, sizeof(u64) * from->n_arms);
+  memcpy(to->trusts, from->trusts, sizeof(double) * from->n_arms);
+
+  to->t = from->n_arms;
+}
+
+void exppp_dest(exppp_t * v) {
+  free(v->weights);
+  free(v->losses);
+  free(v->unweighted_losses);
+  free(v->pulls);
+  free(v->total_rewards);
+  free(v->trusts);
+}
+
 void uniform_init(afl_state_t *afl, uniform_t *v, int n_arms) {
   v->n_arms = n_arms;
   v->arms = calloc(sizeof(uniform_bandit_arm), n_arms);
+}
+
+void uniform_cp(uniform_t *to, uniform_t *from) {
+  to->n_arms = from->n_arms;
+  to->arms = calloc(sizeof(uniform_bandit_arm), from->n_arms);
+  memcpy(to->arms, from->arms, sizeof(uniform_bandit_arm) * from->n_arms);
+}
+
+void uniform_dest(uniform_t * v) {
+  free(v->arms);
 }
 
 void ucb_init(afl_state_t *afl, ucb_t *v, int n_arms) {
@@ -81,15 +141,47 @@ void ucb_init(afl_state_t *afl, ucb_t *v, int n_arms) {
   v->arms = calloc(sizeof(normal_bandit_arm), n_arms);
 }
 
+void ucb_cp(ucb_t *to, ucb_t *from) {
+  to->n_arms = from->n_arms;
+  to->time_step = from->time_step;
+  to->arms = calloc(sizeof(normal_bandit_arm), from->n_arms);
+  memcpy(to->arms, from->arms, sizeof(normal_bandit_arm) * from->n_arms);
+}
+
+void ucb_dest(ucb_t * v) {
+  free(v->arms);
+}
+
 void klucb_init(afl_state_t *afl, klucb_t *v, int n_arms) {
   v->n_arms = n_arms;
   v->time_step = 0;
   v->arms = calloc(sizeof(normal_bandit_arm), n_arms);
 }
 
+void klucb_cp(klucb_t *to, klucb_t *from) {
+  to->n_arms = from->n_arms;
+  to->time_step = from->time_step;
+  to->arms = calloc(sizeof(normal_bandit_arm), from->n_arms);
+  memcpy(to->arms, from->arms, sizeof(normal_bandit_arm) * from->n_arms);
+}
+
+void klucb_dest(klucb_t * v) {
+  free(v->arms);
+}
+
 void ts_init(afl_state_t *afl, ts_t *v, int n_arms) {
   v->n_arms = n_arms;
   v->arms = calloc(sizeof(normal_bandit_arm), n_arms);
+}
+
+void ts_cp(ts_t *to, ts_t *from) {
+  to->n_arms = from->n_arms;
+  to->arms = calloc(sizeof(normal_bandit_arm), from->n_arms);
+  memcpy(to->arms, from->arms, sizeof(normal_bandit_arm) * from->n_arms);
+}
+
+void ts_dest(ts_t * v) {
+  free(v->arms);
 }
 
 void adsts_init(afl_state_t *afl, adsts_t *v, int n_arms) {
@@ -102,14 +194,52 @@ void adsts_init(afl_state_t *afl, adsts_t *v, int n_arms) {
   }
 }
 
+void adsts_cp(adsts_t *to, adsts_t *from) {
+  to->n_arms = from->n_arms;
+  to->arms = calloc(sizeof(adwin_bandit_arm), from->n_arms);
+  memcpy(to->arms, from->arms, sizeof(adwin_bandit_arm) * from->n_arms);
+
+  int i;
+  for (i=0; i<from->n_arms; i++) {
+    cp_adwin(&to->arms[i].adwin, &from->arms[i].adwin);
+  }
+}
+
+void adsts_dest(adsts_t * v) {
+  for (int i = 0; i < v->n_arms; i++) {
+    dest_adwin(&v->arms[i].adwin);
+  }
+  free(v->arms);
+}
+
 void dts_init(afl_state_t *afl, dts_t *v, int n_arms) {
   v->n_arms = n_arms;
   v->arms = calloc(sizeof(dts_bandit_arm), n_arms);
 }
 
+void dts_cp(dts_t *to, dts_t *from) {
+  to->n_arms = from->n_arms;
+  to->arms = calloc(sizeof(dts_bandit_arm), from->n_arms);
+  memcpy(to->arms, from->arms, sizeof(dts_bandit_arm) * from->n_arms);
+}
+
+void dts_dest(dts_t * v) {
+  free(v->arms);
+}
+
 void dbe_init(afl_state_t *afl, dbe_t *v, int n_arms) {
   v->n_arms = n_arms;
   v->arms = calloc(sizeof(dbe_bandit_arm), n_arms);
+}
+
+void dbe_cp(dbe_t *to, dbe_t *from) {
+  to->n_arms = from->n_arms;
+  to->arms = calloc(sizeof(dbe_bandit_arm), from->n_arms);
+  memcpy(to->arms, from->arms, sizeof(dbe_bandit_arm) * from->n_arms);
+}
+
+void dbe_dest(dbe_t * v) {
+  free(v->arms);
 }
 
 /* Initialize MOpt "globals" for this afl state */
@@ -159,6 +289,33 @@ void afl_state_init(afl_state_t *afl, uint32_t map_size) {
   and out_size are NULL/0 by default. */
   memset(afl, 0, sizeof(afl_state_t));
 
+  /* FairFuzz stuff */
+  afl->vanilla_afl = 1000;
+  afl->max_rare_branches = 256;
+  afl->rare_branch_exp = 4;
+  afl->blacklist = NULL;
+  afl->blacklist_size = 1024;
+  afl->blacklist_pos = 0;
+  afl->rb_fuzzing = 0;
+  afl->total_branch_tries = 0;
+  afl->successful_branch_tries = 0;
+  afl->shadow_mode = 0;
+  afl->run_with_shadow = 0;
+  afl->use_branch_mask = 1;
+  afl->prev_cycle_wo_new = 0;
+  afl->cycle_wo_new = 0;
+  afl->bootstrap = 0;
+  afl->skip_deterministic_bootstrap = 0;
+  afl->trim_for_branch = 0;
+
+  afl->blacklist = ck_alloc(sizeof(int) * afl->blacklist_size);
+  if (!afl->blacklist)
+    ABORT("Failed to allocate blacklist.\n");
+  afl->blacklist[0] = -1;
+  
+  /* Use old seed selection for FairFuzz */
+  afl->old_seed_selection = 1;
+
   afl->shm.map_size = map_size ? map_size : MAP_SIZE;
 
   afl->w_init = 0.9;
@@ -197,29 +354,8 @@ void afl_state_init(afl_state_t *afl, uint32_t map_size) {
   gsl_rng_env_setup();
   afl->gsl_rng_state = gsl_rng_alloc (gsl_rng_default);
 
-  {
-    int i;
-
-#ifdef BATCHSIZE_BANDIT
-    for (i=0; i<NUM_BATCH_BUCKET; i++) {
-      int j;
-      for (j=0; j<NUM_CASE; j++) {
-        INIT_INSTANCE(BATCH_ALG) (afl, &afl->batch_bandit[i][j], BATCH_NUM_ARM);
-      }
-    }
-#endif
-
-    for (i=0; i<NUM_MUT_BUCKET; i++) {
-#if   defined(MOPTWISE_BANDIT)
-      INIT_INSTANCE(MUT_ALG) (afl, &afl->mut_bandit[i], NUM_CASE);
-#elif defined(MOPTWISE_BANDIT_FINECOARSE)
-      INIT_INSTANCE(MUT_ALG) (afl, &afl->mut_bandit[i], 2);
-#endif
-    }
-  }
-
   afl->virgin_bits = ck_alloc(map_size);
-  afl->virgin_bits = ck_alloc(map_size);
+  afl->hit_bits = ck_alloc(map_size);
   afl->virgin_tmout = ck_alloc(map_size);
   afl->virgin_crash = ck_alloc(map_size);
   afl->var_bytes = ck_alloc(map_size);
@@ -661,28 +797,6 @@ void afl_state_deinit(afl_state_t *afl) {
   afl_free(afl->in_buf);
   afl_free(afl->in_scratch_buf);
   afl_free(afl->ex_buf);
-
-// Just my laziness...
-#if 0
-  {
-    int i;
-
-#ifdef BATCHSIZE_BANDIT
-    for (i=0; i<NUM_BATCH_BUCKET; i++) {
-      int j;
-      for (j=0; j<NUM_CASE; j++) {
-        DEST_INSTANCE(BATCH_ALG) (afl, &afl->batch_bandit[i][j]);
-      }
-    }
-#endif
-
-#if defined(MOPTWISE_BANDIT) || defined(MOPTWISE_BANDIT_FINECOARSE)
-    for (i=0; i<NUM_MUT_BUCKET; i++) {
-      DEST_INSTANCE(MUT_ALG) (afl, &afl->mut_bandit[i]);
-    }
-#endif
-  }
-#endif
 
   ck_free(afl->virgin_bits);
   ck_free(afl->virgin_tmout);

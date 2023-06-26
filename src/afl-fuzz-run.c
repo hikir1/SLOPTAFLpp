@@ -921,6 +921,8 @@ common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
 
   fault = fuzz_run_target(afl, &afl->fsrv, afl->fsrv.exec_tmout);
 
+	if (afl->vanilla_afl) --afl->vanilla_afl;
+
   if (afl->stop_soon) { return 1; }
 
   if (fault == FSRV_RUN_TMOUT) {
@@ -947,6 +949,15 @@ common_fuzz_stuff(afl_state_t *afl, u8 *out_buf, u32 len) {
     ++afl->cur_skipped_paths;
     return 1;
 
+  }
+
+	// TODO add hits_branch to header?
+  if (afl->rb_fuzzing){
+    afl->total_branch_tries++;
+      if (hits_branch(afl, afl->rb_fuzzing - 1)){
+        afl->successful_branch_tries++;
+      } else {
+    }
   }
 
   /* This handles FAULT_ERROR for us: */
