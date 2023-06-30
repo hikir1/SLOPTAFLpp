@@ -1998,6 +1998,7 @@ skip_simple_bitflip:
      flag first and last byte as doing something. */
 
   eff_map = afl_realloc(AFL_BUF_PARAM(eff), EFF_ALEN(len));
+  memset(eff_map, 0, EFF_ALEN(len));
   if (unlikely(!eff_map)) { PFATAL("alloc"); }
   eff_map[0] = 1;
 
