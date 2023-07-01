@@ -6568,7 +6568,6 @@ pacemaker_fuzzing:
       if (afl->stage_max < HAVOC_MIN) { afl->stage_max = HAVOC_MIN; }
 
       temp_len = len;
-      position_map = ck_realloc(position_map, sizeof (u32) * (temp_len + 1));
 
       orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
 
@@ -6970,7 +6969,6 @@ pacemaker_fuzzing:
                 out_buf = new_buf;
                 afl_swap_bufs(AFL_BUF_PARAM(out), AFL_BUF_PARAM(out_scratch));
                 temp_len += clone_len;
-                position_map = ck_realloc(position_map, sizeof (u32) * (temp_len + 1));
                 MOpt_globals.cycles_v2[STAGE_Clone75]++;
 
               }
@@ -7127,7 +7125,6 @@ pacemaker_fuzzing:
               memcpy(out_buf + insert_at, ptr, extra_len);
 
               temp_len += extra_len;
-              position_map = ck_realloc(position_map, sizeof (u32) * (temp_len + 1));
               MOpt_globals.cycles_v2[STAGE_InsertExtra]++;
               break;
 
@@ -7207,7 +7204,6 @@ pacemaker_fuzzing:
                 out_buf = temp_buf;
                 afl_swap_bufs(AFL_BUF_PARAM(out), AFL_BUF_PARAM(out_scratch));
                 temp_len += clone_len;
-                position_map = ck_realloc(position_map, sizeof (u32) * (temp_len + 1));
 
               }
 
@@ -7236,7 +7232,6 @@ pacemaker_fuzzing:
         out_buf = afl_realloc(AFL_BUF_PARAM(out), len);
         if (unlikely(!out_buf)) { PFATAL("alloc"); }
         temp_len = len;
-        position_map = ck_realloc(position_map, sizeof (u32) * (temp_len + 1));
         memcpy(out_buf, in_buf, len);
 
         /* If we're finding new stuff, let's run for a bit longer, limits
