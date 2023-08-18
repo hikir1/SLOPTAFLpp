@@ -27,6 +27,8 @@
 #include <string.h>
 #include <limits.h>
 #include "cmplog.h"
+#include <assert.h>
+#include <stdio.h>
 
 #include <math.h>
 #include <gsl/gsl_rng.h>
@@ -1348,7 +1350,8 @@ static u32 get_random_modifiable_posn(
       // we know the last index was the last 1 in the line
       if ((!in_0_block) &&(prev_start_of_1_block != -1)){
         int num_bytes = MAX(num_to_modify/8, (u32) 1);
-        for (u32 j = prev_start_of_1_block; j < i-num_bytes + 1; j++){
+	// **Note: We need to cast these values to the same type to prevent overflow!!!
+        for (s32 j = prev_start_of_1_block; j < (int)i-(int)num_bytes + 1; j++){
             // I hate this ++ within operator stuff
             position_map[position_map_len++] = j;
         }
